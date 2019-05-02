@@ -1,0 +1,49 @@
+<pre>
+  Layer: Peer Services
+  Title: Xthinner Block Relay
+  Author: Jonathan Toomim <j@toom.im>
+  Status: Draft
+  Type: Standards Track
+  Created: 2019-05-01
+  License: Public Domain
+</pre>
+
+==Abstract==
+
+Xthinner is a technique for transmitting blocks using fewer wire bytes than existing techniques.
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
+
+==Motivation==
+
+Block propagation is one of the biggest performance bottlenecks determining Bitcoin's capacity. Long block propagation times cause elevated block orphan rates, which in turn incentivizes miners to join large pools and compromises Bitcoin's decentralization. One technique for improving block propagation latency is compression. Xthinner can compress blocks down to about 12 to 16 bits per transaction, or a ~99.6% reduction in wire bandwidth during the latency-critical propagation bandwidth. This is about 3x better than Compact Blocks, which gets about 98.5% compression. This compression is useful for low-bandwidth nodes to minimize bandwidth spikes. It is also somewhat useful for miners who wish to download blocks as quickly as possible without belonging to a permissioned or trusted relay network, but this protocol is not optimized for that use case. However, this work forms a foundation for a work-in-progress called Blocktorrent which explicitly targets the permissionless/anonymous miner use case.
+
+==Intended Protocol Flow==
+
+Xthinner's protocol is similar to Compact Blocks (BIP 152), though with some key differences.
+
+An Xthinner client will announce its capabilities and preferences with an `xtroptions` message. These can be updated at any time with additional `xtroptions` messages. These preferences include information on when blocks should be pushed immediately over the wire using Xthinner, and when clients should announce blocks using a header only and wait for a request before pushing the block via Xthinner (pull mode). 
+
+When two clients have negotiatied a mutually compatible configuration, they may begin sending and requesting Xthinner data from each other. In pull mode, a request for a block may be done via a `getdata` request using `INV` type 5 (`MSG_XTR_BLOCK`). The client should respond with an `xtrblk` message, which contains the blocks header, coinbase transaction, and one or more Xthinner-compressed segments of shortened TXIDs. The recipient first checks the header's PoW and nBits for validity. Assuming it is a valid and worthwhile header, the recipient will attempt to decode the Xthinner segments in the `xtrblk` message. If they are unable to, either because their mempool is missing a transaction, or a visible collision occurs, or a blind collision occurs (triggering a checksum error), then the recipient will request one or more transaction (by index) in an `xtrgettxn` message, to which the sender responds with an `xtrtxn` message. In very rare instances, the decoding of the `xtrtxn` message will enable additional rounds of checksum checks, and can trigger additional `xtrgettx`/`xtrtxn` rounds.
+
+After successfully decoding the `xtrblk` and any necessary `xtrtxn` messages, the recipient will have reconstructed the original block. The recipient will then check that the merkle root for that block matches the one specified in the header. If it does, the recipient may propagate the `xtrblk` message to other peers without having verified the transactions in the block, as long as those peers have indicated consent for unverified `xtrblk` messages in their `xtroptions` message.
+
+==Overview of differences from Compact Blocks==
+
+The main differences between Xthinner and Compact Blocks are as follows:
+
+1. The base encoding scheme for shortIDs is very different. Xthinner uses a variable-length scheme that averages about 12 bits per transaction, whereas Compact Blocks uses a constant-length 48-bit siphash shortID.
+
+2. The `xtroptions` message plays a similar role to CB's `sendcmpct` message, but `xtroptions` is more detailed and flexible. The `xtroptions` message is variable-length and extensible, and allows clients to specify more details about bandwidth/latency tradeoffs (e.g. pushing small blocks, but waiting for a pull for large blocks).
+
+3. The `xtrblk` message splits the block into one or more segments of shortIDs, each of which can be encoded and decoded independently in a separate thread. In the future, this feature will be used by Blocktorrent to create chunks which are also independently verifiable against the Merkle root, and therefore can be independently propagated.
+
+4. The `xtrgettxn` message refers to transactions by absolute indices instead of relative (diffed) indices as used by CB's `getblocktxn`. This is less efficient, but was easier to program, and the coding efficiency difference is small enough to not matter in the author's opinion.
+
+5. The `xtrtxn` message includes the transaction indices, whereas CB's `blocktxn` does not. This allows `xtrtxn` messages for different segments to be processed out-of-order, which facilitates use with UDP and multithreaded systems. It also allows for block senders to send an `xtrtxn` message immediately after a `xtrblk` message with any transactions that the sender expects are likely missing from the recipient's mempool. By including these transactions separately, the recipient will be able to begin decoding the message before the `xtrtxn` message arrives, thereby improving best-case latency, while still getting the likely-missing transactions without an extra round-trip.
+
+==New data structures==
+
+Several new data structures are added to the P2P network to relay Xthinner blocks: XthinnerSegment, XthinnerBlock, XthinnerConfig, XthinnerTransactions. One more data structure is used from BIP152: PrefilledTransaction.
+
+To be continued...
