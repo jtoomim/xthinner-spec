@@ -22,11 +22,11 @@ Block propagation is one of the biggest performance bottlenecks determining Bitc
 
 Xthinner's protocol is similar to Compact Blocks (BIP 152), though with some key differences.
 
-An Xthinner client will announce its capabilities and preferences with an `xtroptions` message. These can be updated at any time with additional `xtroptions` messages. These preferences include information on when blocks should be pushed immediately over the wire using Xthinner, and when clients should announce blocks using a header only and wait for a request before pushing the block via Xthinner (pull mode). 
+An Xthinner client will announce its capabilities and preferences with an <code>xtroptions</code> message. These can be updated at any time with additional <code>xtroptions</code> messages. These preferences include information on when blocks should be pushed immediately over the wire using Xthinner, and when clients should announce blocks using a header only and wait for a request before pushing the block via Xthinner (pull mode). 
 
-When two clients have negotiatied a mutually compatible configuration, they may begin sending and requesting Xthinner data from each other. In pull mode, a request for a block may be done via a `getdata` request using `INV` type 5 (`MSG_XTR_BLOCK`). The client should respond with an `xtrblk` message, which contains the blocks header, coinbase transaction, and one or more Xthinner-compressed segments of shortened TXIDs. The recipient first checks the header's PoW and nBits for validity. Assuming it is a valid and worthwhile header, the recipient will attempt to decode the Xthinner segments in the `xtrblk` message. If they are unable to, either because their mempool is missing a transaction, or a visible collision occurs, or a blind collision occurs (triggering a checksum error), then the recipient will request one or more transaction (by index) in an `xtrgettxn` message, to which the sender responds with an `xtrtxn` message. In very rare instances, the decoding of the `xtrtxn` message will enable additional rounds of checksum checks, and can trigger additional `xtrgettx`/`xtrtxn` rounds.
+When two clients have negotiatied a mutually compatible configuration, they may begin sending and requesting Xthinner data from each other. In pull mode, a request for a block may be done via a <code>getdata</code> request using <code>INV</code> type 5 (<code>MSG_XTR_BLOCK</code>). The client should respond with an <code>xtrblk</code> message, which contains the blocks header, coinbase transaction, and one or more Xthinner-compressed segments of shortened TXIDs. The recipient first checks the header's PoW and nBits for validity. Assuming it is a valid and worthwhile header, the recipient will attempt to decode the Xthinner segments in the <code>xtrblk</code> message. If they are unable to, either because their mempool is missing a transaction, or a visible collision occurs, or a blind collision occurs (triggering a checksum error), then the recipient will request one or more transaction (by index) in an <code>xtrgettxn</code> message, to which the sender responds with an <code>xtrtxn</code> message. In very rare instances, the decoding of the <code>xtrtxn</code> message will enable additional rounds of checksum checks, and can trigger additional <code>xtrgettx</code>/<code>xtrtxn</code> rounds.
 
-After successfully decoding the `xtrblk` and any necessary `xtrtxn` messages, the recipient will have reconstructed the original block. The recipient will then check that the merkle root for that block matches the one specified in the header. If it does, the recipient may propagate the `xtrblk` message to other peers without having verified the transactions in the block, as long as those peers have indicated consent for unverified `xtrblk` messages in their `xtroptions` message.
+After successfully decoding the <code>xtrblk</code> and any necessary <code>xtrtxn</code> messages, the recipient will have reconstructed the original block. The recipient will then check that the merkle root for that block matches the one specified in the header. If it does, the recipient may propagate the <code>xtrblk</code> message to other peers without having verified the transactions in the block, as long as those peers have indicated consent for unverified <code>xtrblk</code> messages in their <code>xtroptions</code> message.
 
 ==Overview of differences from Compact Blocks==
 
@@ -34,16 +34,82 @@ The main differences between Xthinner and Compact Blocks are as follows:
 
 1. The base encoding scheme for shortIDs is very different. Xthinner uses a variable-length scheme that averages about 12 bits per transaction, whereas Compact Blocks uses a constant-length 48-bit siphash shortID.
 
-2. The `xtroptions` message plays a similar role to CB's `sendcmpct` message, but `xtroptions` is more detailed and flexible. The `xtroptions` message is variable-length and extensible, and allows clients to specify more details about bandwidth/latency tradeoffs (e.g. pushing small blocks, but waiting for a pull for large blocks).
+2. The <code>xtroptions</code> message plays a similar role to CB's <code>sendcmpct</code> message, but <code>xtroptions</code> is more detailed and flexible. The <code>xtroptions</code> message is variable-length and extensible, and allows clients to specify more details about bandwidth/latency tradeoffs (e.g. pushing small blocks, but waiting for a pull for large blocks).
 
-3. The `xtrblk` message splits the block into one or more segments of shortIDs, each of which can be encoded and decoded independently in a separate thread. In the future, this feature will be used by Blocktorrent to create chunks which are also independently verifiable against the Merkle root, and therefore can be independently propagated.
+3. The <code>xtrblk</code> message splits the block into one or more segments of shortIDs, each of which can be encoded and decoded independently in a separate thread. In the future, this feature will be used by Blocktorrent to create chunks which are also independently verifiable against the Merkle root, and therefore can be independently propagated.
 
-4. The `xtrgettxn` message refers to transactions by absolute indices instead of relative (diffed) indices as used by CB's `getblocktxn`. This is less efficient, but was easier to program, and the coding efficiency difference is small enough to not matter in the author's opinion.
+4. The <code>xtrgettxn</code> message refers to transactions by absolute indices instead of relative (diffed) indices as used by CB's <code>getblocktxn</code>. This is less efficient, but was easier to program, and the coding efficiency difference is small enough to not matter in the author's opinion.
 
-5. The `xtrtxn` message includes the transaction indices, whereas CB's `blocktxn` does not. This allows `xtrtxn` messages for different segments to be processed out-of-order, which facilitates use with UDP and multithreaded systems. It also allows for block senders to send an `xtrtxn` message immediately after a `xtrblk` message with any transactions that the sender expects are likely missing from the recipient's mempool. By including these transactions separately, the recipient will be able to begin decoding the message before the `xtrtxn` message arrives, thereby improving best-case latency, while still getting the likely-missing transactions without an extra round-trip.
+5. The <code>xtrtxn</code> message includes the transaction indices, whereas CB's <code>blocktxn</code> does not. This allows <code>xtrtxn</code> messages for different segments to be processed out-of-order, which facilitates use with UDP and multithreaded systems. It also allows for block senders to send an <code>xtrtxn</code> message immediately after a <code>xtrblk</code> message with any transactions that the sender expects are likely missing from the recipient's mempool. By including these transactions separately, the recipient will be able to begin decoding the message before the <code>xtrtxn</code> message arrives, thereby improving best-case latency, while still getting the likely-missing transactions without an extra round-trip.
 
 ==New data structures==
 
-Several new data structures are added to the P2P network to relay Xthinner blocks: XthinnerSegment, XthinnerBlock, XthinnerConfig, XthinnerTransactions. One more data structure is used from BIP152: PrefilledTransaction.
+Several new data structures are added to the P2P network to relay Xthinner blocks: XthinnerConfig, XthinnerSegment, XthinnerBlock, XthinnerTransactions. One more data structure is used from BIP152: PrefilledTransaction.
 
-To be continued...
+For the purposes of this section, CompactSize refers to the variable-length integer encoding used across the existing P2P protocol to encode array lengths, among other things, in 1, 3, 5 or 9 bytes. Only CompactSize encodings which are minimally-encoded (ie the shortest length possible) are used by this spec. Any other CompactSize encodings are left with undefined behavior.
+
+====XthinnerConfig====
+A XthinnerConfig structure is used to specify the version of Xthinner supported by a client and what that client's capabilities and preferences are. The XthinnerConfig structure shall be the sole contents of an <code>xtroptions</code> message. The XthinnerConfig is a variable-length structure; different clients may use and support XthinnerConfig structures of different lengths. Any bytes beyond what the recipient knows how to parse will be ignored. If multiple XthinnerConfig messages are sent, the active configuration will always be the XthinnerConfig message that was most recently sent. If an earlier XthinnerConfig message had a value for an optional field that a later XthinnerConfig message lacks, the earlier value is ignored and the default value for that field should be used.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|messageSize||VarInt||1, 3 bytes||(Required) The number of bytes of payload in this XthinnerConfig message||Needed for parsing the XthinnerConfig object
+|-
+|XtrVersion||uint8||1||(Required) The version of the Xthinner supported by this client||Xthinner will be enabled only if the most recent XthinnerConfig sent by each client has the same version number. Versions with bit 0x80 set are for debugging implementations. This specification document is for Xthinner version 0x81 (will be 0x01 once spec finalized).
+|-
+|CanSendXtr||bool||1||(Optional) 0 for false, nonzero for true||This indicates whether the client who sent this XthinnerConfig object is capable of encoding and transmitting <code>xtrblk</code> and <code>xtrtxn</code> messages. If not specified, clients should assume a value of true.
+|-
+|CanRecvXtr||bool||1||(Optional) 0 for false, nonzero for true||This indicates whether the client who sent this XthinnerConfig object is capable of parsing and using <code>xtrblk</code> and <code>xtrtxn</code> messages. If not specified, clients should assume a value of true.
+|-
+|AnnounceUnverified||bool||1||(Optional) 0 for false, nonzero for true||This indicates whether the client who sent this XthinnerConfig object wishes the XthinnerConfig recipient to announce blocks after only the header and merkle root have been validated (if true) or only after the whole block has been validated. If true, the sender of this XthinnerConfig may not DoS ban or punish peers who send <code>xtrblk</code> messages or <code>headers</code> messages which decode properly, and contain valid PoW and merkle root, but which are invalid for other reasons. If not specified, clients should assume a default value of false.
+|-
+|PushXtrBlocks||bool||1||(Optional) 0 for false, nonzero for true||This indicates whether the client who sent this XthinnerConfig object prefers the recipient to push notifications of blocks as an <code>xtrblk</code> message rather than as a <code>headers</code> message. If not specified, clients may assume either value.
+|-
+|PushMaxTxCount||uint64||8||(Optional) The maximum number of transactions in a block to push||This indicates the maximum size block (as measured by tx count) that the client who sent this XthinnerConfig object is willing to receive push notifications of blocks as an <code>xtrblk</code> message. Blocks with more transactions than this number must not be pushed as an <code>xtrblk</code> message until requested with a <code>getdata</code> message. If not specified, the recipient may choose any value.
+|}
+
+====XthinnerSegment====
+The XthinnerSegment is the core data structure of the Xthinner encoding system. It provides a sequence of commands and data which can be decoded into a sequence of truncated TXIDs.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|SegmentLength||VarInt||1, 3, 5, or 9 bytes||A variable-length integer, as used elsewhere||The number of TXIDs encoded by this segment
+|-
+|CommandSizeBits||VarInt||1, 3, 5, or 9 bytes||A variable-length integer, as used elsewhere||This serves no purpose, and will be removed soon
+|-
+|PackedCommands_length||VarInt||1, 3, 5, or 9 bytes||As used to encode array lengths elsewhere||The number of bytes of commands for the state machine
+|-
+|PackedCommands||Array of bools packed as array of uint8_t||Variable||First command is the least significant bit of the first byte; 8th command is most significant bit of first byte, etc||Push and pop commands for the Xthinner state machine, as described later
+|-
+|PushBytes_length||VarInt||1, 3, 5, or 9 bytes||As used to encode array lengths elsewhere	||Number of bytes of TXID data used in PushBytes
+|-
+|PushBytes||Array of bytes (uint8_t)||Variable||The first byte is the first consumed||The bytes of TXID data that will be pushed onto the Xthinner state machine's stack during decoding
+|-
+|ChecksumSpec_length||VarInt||1, 3, 5, or 9 bytes||As used to encode array lengths elsewhere	||The number of distinct checksum levels used by this segment. This is equal to the number of two-byte pairs in the 
+|-
+|ChecksumSpec||Type||Size||An array of two-byte <uint8, uint8> pairs. ||This array specifies the checksumming scheme to be used on this segment. The first byte of each element is the index in the TXID that is being checksummed, in big-endian order. The second byte is ... to be continued
+|-
+|ChecksumData_length||VarInt||1, 3, 5, or 9 bytes||As used to encode array lengths elsewhere	||Purpose
+|-
+|ChecksumData||Type||Size||Encoding||Purpose
+|-
+|PrefilledTransactions_length||VarInt||1, 3, 5, or 9 bytes||As used to encode array lengths elsewhere	||Purpose
+|-
+|PrefilledTransactions||Type||Size||Encoding||The extra transactions that it is expected the recipient will need to decode the segment/block, such as the coinbase transaction
+|}
+
+
+====PrefilledTransaction====
+A PrefilledTransaction structure is used in HeaderAndShortIDs to provide a list of a few transactions explicitly.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|index||CompactSize||1, 3 bytes||Compact Size, differentially encoded since the last PrefilledTransaction in a list||The index into the block at which this transaction is
+|-
+|tx||Transaction||variable||As encoded in "tx" messages sent in response to getdata MSG_TX||The transaction which is in the block at index index.
+|}
+
+
